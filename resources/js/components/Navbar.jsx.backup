@@ -1,0 +1,106 @@
+import React, { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+
+function Navbar() {
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('userToken'));
+  const location = useLocation();
+
+  const handleLogout = () => {
+    localStorage.removeItem('userToken');
+    setIsLoggedIn(false);
+    window.location.href = '/';
+  };
+
+  return (
+    <nav className="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
+      <div className="container">
+        <Link className="navbar-brand fw-bold" to="/">
+          🏆 ICPC Community
+        </Link>
+        <button
+          className="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarNav"
+        >
+          <span className="navbar-toggler-icon"></span>
+        </button>
+        <div className="collapse navbar-collapse" id="navbarNav">
+          <div className="navbar-nav ms-auto">
+            <Link
+              className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
+              to="/"
+            >
+              Home
+            </Link>
+            <Link
+              className={`nav-link ${location.pathname === '/about' ? 'active' : ''}`}
+              to="/about"
+            >
+              About
+            </Link>
+            <Link
+              className={`nav-link ${location.pathname === '/compiler' ? 'active' : ''}`}
+              to="/compiler"
+            >
+              Compiler
+            </Link>
+            <Link
+              className={`nav-link ${location.pathname === '/standings' ? 'active' : ''}`}
+              to="/standings"
+            >
+              Standings
+            </Link>
+            {isLoggedIn && (
+              <>
+                <Link
+                  className={`nav-link ${location.pathname === '/trainings' ? 'active' : ''}`}
+                  to="/trainings"
+                >
+                  Trainings
+                </Link>
+                <Link
+                  className={`nav-link ${location.pathname === '/dashboard' ? 'active' : ''}`}
+                  to="/dashboard"
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  className={`nav-link ${location.pathname === '/profile' ? 'active' : ''}`}
+                  to="/profile"
+                >
+                  Profile
+                </Link>
+                <button
+                  className="nav-link btn btn-link"
+                  onClick={handleLogout}
+                  style={{ cursor: 'pointer' }}
+                >
+                  Logout
+                </button>
+              </>
+            )}
+            {!isLoggedIn && (
+              <>
+                <Link
+                  className={`nav-link ${location.pathname === '/register' ? 'active' : ''}`}
+                  to="/register"
+                >
+                  Register
+                </Link>
+                <Link
+                  className={`nav-link ${location.pathname === '/login' ? 'active' : ''}`}
+                  to="/login"
+                >
+                  Login
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+export default Navbar;
