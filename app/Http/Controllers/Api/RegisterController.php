@@ -13,55 +13,67 @@ class RegisterController extends Controller
 {
     public function register(Request $request)
     {
+        // 1. استرجاع بيانات السيشين للتأكد من حالة الـ OAuth
+        $oauthHandle = session('cf_handle');
+        $isOAuth = $oauthHandle && ($oauthHandle === $request->codeforcesHandle);
+
+        // 2. الـ Validation
         $request->validate([
-            'name' => 'required',
+            'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users',
             'phone' => 'required',
             'department' => 'required',
-            'codeforcesHandle' => 'required',
-            'password' => 'required|string|min:6|confirmed',
+            'codeforcesHandle' => 'required|string|unique:users,codeforces_handle', // التأكد إنه مش متسجل قبل كدة
+            'password' => $isOAuth ? 'nullable' : 'required|string|min:8|confirmed',
         ]);
 
-        // Check if this is an OAuth registration
-        $oauthHandle = session('cf_handle');
-        if ($oauthHandle && $oauthHandle === $request->codeforcesHandle) {
+        if ($isOAuth) {
+            // بيانات جاية من السيشين (OAuth)
             $cfData = [
-                'rating' => session('cf_rating', 0),
-                'email' => session('cf_email'),
+                'rating' => session('cf_rating', 0), 
+                'email' => session('cf_email')
             ];
+            $password = Hash::make(Str::random(24)); 
         } else {
-            $response = Http::get("https://codeforces.com/api/user.info?handles={$request->codeforcesHandle}");
-            if ($response->json()['status'] !== 'OK') {
-                return response()->json(['message' => 'Invalid Codeforces handle'], 400);
+            // تسجيل يدوي: لازم نتحقق من الهاندل عبر API كود فورس
+            try {
+                $response = Http::withoutVerifying()->timeout(10)->get("https://codeforces.com/api/user.info?handles={$request->codeforcesHandle}");
+                
+                // التأكد إن الرد OK وإن الهاندل موجود فعلاً
+                if (!$response->successful() || $response->json('status') !== 'OK') {
+                    return response()->json(['message' => 'هذا الهاندل غير موجود على كود فورس، تأكد من كتابته بشكل صحيح.'], 422);
+                }
+
+                $cfData = $response->json()['result'][0];
+                $password = Hash::make($request->password);
+            } catch (\Exception $e) {
+                return response()->json(['message' => 'تعذر الاتصال بكود فورس حالياً، حاول مرة أخرى.'], 503);
             }
-            $cfData = $response->json()['result'][0];
         }
 
+        // 3. إنشاء المستخدم
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
-            'password' => Hash::make($request->password),
+            'password' => $password,
             'phone' => $request->phone,
-            'college' => 'Egyptian University of Science and Technology',
+            'college' => 'Minia University',
             'department' => $request->department,
             'codeforces_handle' => $request->codeforcesHandle,
             'rating' => $cfData['rating'] ?? 0,
             'api_token' => Str::random(80),
         ]);
 
-        session()->forget(['cf_handle', 'cf_email', 'cf_rating']);
+        // 4. تنظيف السيشين بعد النجاح
+        if ($isOAuth) {
+            session()->forget(['cf_handle', 'cf_email', 'cf_rating', 'cf_name']);
+            session()->save(); 
+        }
 
         return response()->json([
-            'token' => $user->api_token,
-            'user' => [
-                'name' => $user->name,
-                'email' => $user->email,
-                'phone' => $user->phone,
-                'college' => $user->college,
-                'department' => $user->department,
-                'codeforcesHandle' => $user->codeforces_handle,
-                'rating' => $user->rating,
-            ],
+            'message' => 'تم التسجيل بنجاح!',
+            'token' => $user->api_token, 
+            'user' => $user
         ]);
     }
 }

@@ -1,195 +1,89 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import Navbar from './Navbar';
 
-function Register() {
-  const [form, setForm] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    department: '',
-    codeforcesHandle: ''
-  });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [isOAuth, setIsOAuth] = useState(false);
-  const [handleReadOnly, setHandleReadOnly] = useState(false);
+axios.defaults.withCredentials = true; 
 
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const oauth = urlParams.get('oauth');
-    const token = urlParams.get('token');
-    const existing = urlParams.get('existing');
-    const error = urlParams.get('error');
+const Register = () => {
+    const [formData, setFormData] = useState({
+        name: '', email: '', phone: '', department: '', codeforcesHandle: '', password: '', password_confirmation: ''
+    });
+    const [isOAuth, setIsOAuth] = useState(false);
 
-    if (oauth === 'codeforces') {
-      setIsOAuth(true);
-      // Fetch OAuth data
-      axios.get('/api/oauth/data')
-        .then(response => {
-          const data = response.data;
-          if (data.handle) {
-            setForm(prev => ({
-              ...prev,
-              codeforcesHandle: data.handle,
-              email: data.email || prev.email,
-              name: data.name || prev.name,
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const handle = params.get('handle');
+        const name = params.get('name');
+        const email = params.get('email');
+
+        if (handle) {
+            setFormData(prev => ({
+                ...prev,
+                codeforcesHandle: handle,
+                name: name || '',
+                email: email || ''
             }));
-            setHandleReadOnly(true);
-          }
-        })
-        .catch(err => {
-          console.error('Failed to fetch OAuth data:', err);
-        });
-    }
+            setIsOAuth(true);
+        } else {
+            axios.get('http://localhost:8000/api/oauth/data')
+                .then(res => {
+                    if (res.data.handle) {
+                        setFormData(prev => ({
+                            ...prev,
+                            name: res.data.name || '',
+                            email: res.data.email || '',
+                            codeforcesHandle: res.data.handle || ''
+                        }));
+                        setIsOAuth(true);
+                    }
+                }).catch(() => console.log("Manual Mode"));
+        }
+    }, []);
 
-    if (token && existing === 'true') {
-      localStorage.setItem('userToken', token);
-      window.location.href = '/dashboard';
-    }
+    const handleChange = (e) => {
+        setFormData({ ...formData, [e.target.name]: e.target.value });
+    };
 
-    if (error) {
-      setError('OAuth authentication failed. Please try again.');
-    }
-  }, []);
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            const res = await axios.post('http://localhost:8000/api/register', formData);
+            alert("تم التسجيل بنجاح!");
+            window.location.href = '/dashboard';
+        } catch (err) {
+            alert(err.response?.data?.message || "خطأ في التسجيل");
+        }
+    };
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+    const inputStyle = { width: '100%', padding: '10px', marginBottom: '10px', border: '1px solid #ccc', borderRadius: '5px' };
 
-  const handleCodeforcesLogin = () => {
-    window.location.href = '/api/oauth/codeforces';
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const response = await axios.post('/api/register', form);
-      setSuccess('Account created successfully! Redirecting...');
-      localStorage.setItem('userToken', response.data.token);
-      setTimeout(() => {
-        window.location.href = '/dashboard';
-      }, 1500);
-    } catch (error) {
-      setError(error.response?.data?.message || 'Registration failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div>
-      <Navbar />
-      <div className="container mt-5">
-        <div className="row justify-content-center">
-          <div className="col-md-6">
-            <div className="card">
-              <div className="card-body">
-                <h2 className="card-title mb-4">Create Account</h2>
-                
+    return (
+        <div style={{ maxWidth: '500px', margin: '50px auto', padding: '20px', border: '1px solid #eee' }}>
+            <h2 style={{ textAlign: 'center' }}>{isOAuth ? 'أكمل بياناتك' : 'إنشاء حساب جديد'}</h2>
+            <form onSubmit={handleSubmit}>
+                <input style={inputStyle} type="text" name="name" placeholder="الاسم الكامل" value={formData.name} onChange={handleChange} required />
+                <input style={inputStyle} type="email" name="email" placeholder="البريد الإلكتروني" value={formData.email} onChange={handleChange} required />
+                <input style={inputStyle} type="text" name="phone" placeholder="رقم الهاتف" value={formData.phone} onChange={handleChange} required />
+                <input style={inputStyle} type="text" name="department" placeholder="القسم" value={formData.department} onChange={handleChange} required />
+                <input style={inputStyle} type="text" name="codeforcesHandle" placeholder="Handle" value={formData.codeforcesHandle} onChange={handleChange} readOnly={isOAuth} required />
                 {!isOAuth && (
-                  <div className="mb-3">
-                    <button
-                      type="button"
-                      className="btn btn-outline-primary w-100 mb-3"
-                      onClick={handleCodeforcesLogin}
-                    >
-                      <i className="fab fa-codeforces me-2"></i>
-                      Continue with Codeforces
-                    </button>
-                    <div className="text-center mb-3">
-                      <span className="text-muted">or register manually</span>
-                    </div>
-                  </div>
+                    <>
+                        <input style={inputStyle} type="password" name="password" placeholder="كلمة المرور" onChange={handleChange} required />
+                        <input style={inputStyle} type="password" name="password_confirmation" placeholder="تأكيد كلمة المرور" onChange={handleChange} required />
+                    </>
                 )}
-                
-                {error && <div className="alert alert-danger">{error}</div>}
-                {success && <div className="alert alert-success">{success}</div>}
-                
-                <form onSubmit={handleSubmit}>
-                  <div className="mb-3">
-                    <label className="form-label">Full Name</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      name="name"
-                      value={form.name}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label">Email</label>
-                    <input
-                      type="email"
-                      className="form-control"
-                      name="email"
-                      value={form.email}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label">Phone</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      name="phone"
-                      value={form.phone}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label">Department</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      name="department"
-                      value={form.department}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label">Codeforces Handle</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      name="codeforcesHandle"
-                      value={form.codeforcesHandle}
-                      onChange={handleChange}
-                      required
-                      readOnly={handleReadOnly}
-                      className={`form-control ${handleReadOnly ? 'bg-light' : ''}`}
-                    />
-                    {handleReadOnly && (
-                      <small className="text-muted">Handle obtained from Codeforces and cannot be changed</small>
-                    )}
-                  </div>
-                  <button
-                    type="submit"
-                    className="btn btn-primary w-100"
-                    disabled={loading}
-                  >
-                    {loading ? 'Creating Account...' : 'Register'}
-                  </button>
-                </form>
-                <p className="mt-3 text-center">
-                  Already have an account? <a href="/login">Login here</a>
-                </p>
-              </div>
-            </div>
-          </div>
+                <button type="submit" style={{ width: '100%', padding: '12px', background: '#28a745', color: '#fff', border: 'none', cursor: 'pointer' }}>إتمام التسجيل</button>
+            </form>
+            {!isOAuth && (
+                <button
+                    onClick={() => (window.location.href = 'http://localhost:8000/api/oauth/codeforces')}
+                    style={{ width: '100%', marginTop: '10px', padding: '10px', background: '#007bff', color: '#fff', border: 'none', cursor: 'pointer' }}
+                >
+                    Continue with Codeforces
+                </button>
+            )}
+
         </div>
-      </div>
-    </div>
-  );
-}
+    );
+};
 
 export default Register;

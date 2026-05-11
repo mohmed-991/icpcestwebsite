@@ -4,13 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class OAuthController extends Controller
 {
+    private function getFrontendUrl($path = '') {
+        return rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . $path;
+    }
+
     public function redirectToCodeforces()
     {
         $clientId = env('CODEFORCES_CLIENT_ID');
@@ -29,16 +32,17 @@ class OAuthController extends Controller
     public function handleCodeforcesCallback(Request $request)
     {
         $code = $request->get('code');
+        
         if (!$code) {
-            return redirect('/register?error=oauth_failed');
+            return redirect($this->getFrontendUrl('/register?error=oauth_failed'));
         }
 
         try {
             $clientId = env('CODEFORCES_CLIENT_ID');
             $clientSecret = env('CODEFORCES_CLIENT_SECRET');
-            $redirectUri = env('CODEFORCES_REDIRECT_URI', url('/api/oauth/codeforces/callback'));
+            $redirectUri = env('CODEFORCES_REDIRECT_URI', url('/oauth/codeforces/callback'));
 
-            $response = Http::asForm()->post('https://codeforces.com/oauth/token', [
+            $response = Http::withoutVerifying()->asForm()->post('https://codeforces.com/oauth/token', [
                 'client_id' => $clientId,
                 'client_secret' => $clientSecret,
                 'grant_type' => 'authorization_code',
@@ -47,40 +51,63 @@ class OAuthController extends Controller
             ]);
 
             if (!$response->successful()) {
-                return redirect('/register?error=oauth_failed');
+                // يمكنك تسجيل الخطأ هنا لمعرفة السبب (Log::error($response->body()))
+                return redirect($this->getFrontendUrl('/register?error=token_exchange_failed'));
             }
 
-            $tokenData = $response->json();
-            $accessToken = $tokenData['access_token'];
+            if (!$response->successful()) {
+                return redirect($this->getFrontendUrl('/register?error=token_exchange_failed'));
+            }
 
-            $userResponse = Http::withToken($accessToken)->get('https://codeforces.com/api/user.info?handles=' . urlencode($request->get('handle')));
-            if (!$userResponse->successful()) {
-                return redirect('/register?error=user_info_failed');
+            $accessToken = $response->json()['access_token'];
+
+            $userResponse = Http::withoutVerifying()->withToken($accessToken)
+                ->get('https://codeforces.com/api/user.info');
+            
+            if (!$userResponse->successful() || !isset($userResponse->json()['result'][0])) {
+                return redirect($this->getFrontendUrl('/register?error=user_info_failed'));
             }
 
             $userData = $userResponse->json();
-            if (!isset($userData['status']) || $userData['status'] !== 'OK') {
-                return redirect('/register?error=user_info_failed');
-            }
-
             $cfUser = $userData['result'][0];
 
             $existingUser = User::where('codeforces_handle', $cfUser['handle'])->first();
+            
             if ($existingUser) {
-                $token = $existingUser->api_token ?: $existingUser->generateApiToken();
-                return redirect('/register?token=' . $token . '&existing=true');
+                // توحيد منطق التوكن مع RegisterController و LoginController
+                if (!$existingUser->api_token) {
+                    $existingUser->api_token = Str::random(80);
+                    $existingUser->save();
+                }
+                $token = $existingUser->api_token;
+                return redirect($this->getFrontendUrl('/register?token=' . $token . '&existing=true'));
             }
 
+            $handle = $cfUser['handle'];
+            $name = trim(($cfUser['firstName'] ?? '') . ' ' . ($cfUser['lastName'] ?? ''));
+            $email = $cfUser['email'] ?? '';
+            $rating = $cfUser['rating'] ?? 0;
+
             session([
-                'cf_handle' => $cfUser['handle'],
-                'cf_email' => $cfUser['email'] ?? null,
-                'cf_name' => trim(($cfUser['firstName'] ?? '') . ' ' . ($cfUser['lastName'] ?? '')),
-                'cf_rating' => $cfUser['rating'] ?? 0,
+                'cf_handle' => $handle,
+                'cf_email' => $email,
+                'cf_name' => $name,
+                'cf_rating' => $rating,
+            ]);
+            session()->save();
+
+            $queryString = http_build_query([
+                'handle' => $handle,
+                'name' => $name,
+                'email' => $email,
+                'rating' => $rating,
+                'oauth' => 'true'
             ]);
 
-            return redirect('/register?oauth=codeforces');
+            return redirect($this->getFrontendUrl('/register?' . $queryString));
+
         } catch (\Exception $e) {
-            return redirect('/register?error=oauth_error');
+            return redirect($this->getFrontendUrl('/register?error=' . urlencode($e->getMessage())));
         }
     }
 
